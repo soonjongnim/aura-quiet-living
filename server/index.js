@@ -16,6 +16,11 @@ app.use((req, res, next) => {
     next();
 });
 
+// Health Check API
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
 
 // Login API
 app.post('/api/login', (req, res) => {
