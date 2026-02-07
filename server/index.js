@@ -1,8 +1,8 @@
 import express from 'express';
 import cors from 'cors';
-import db from './db.js';
-import * as ml from './ml.js';
 import { fileURLToPath } from 'url';
+
+console.log('[Init] Server index.js loading...');
 
 const app = express();
 const PORT = 3001;
@@ -16,41 +16,79 @@ app.use((req, res, next) => {
     next();
 });
 
-// Health Check API
+// Health Check API - No DB dependency
 app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    res.json({
+        status: 'ok',
+        env: process.env.NODE_ENV,
+        node: process.version,
+        timestamp: new Date().toISOString()
+    });
 });
+
+// Database and ML imports (Static for now, but used carefully)
+let db;
+let ml;
+
+async function initDb() {
+    if (db) return db;
+    try {
+        console.log('[Init] Importing database...');
+        const dbModule = await import('./db.js');
+        db = dbModule.default;
+        console.log('[Init] Importing ML module...');
+        ml = await import('./ml.js');
+        console.log('[Init] Database and ML modules loaded.');
+        return db;
+    } catch (err) {
+        console.error('[Error] Failed to initialize database:', err);
+        throw err;
+    }
+}
 
 
 // Login API
-app.post('/api/login', (req, res) => {
-    const { username, password } = req.body;
-    const user = db.prepare('SELECT * FROM users WHERE username = ? AND password = ?').get(username, password);
+app.post('/api/login', async (req, res) => {
+    try {
+        const db = await initDb();
+        const { username, password } = req.body;
+        const user = db.prepare('SELECT * FROM users WHERE username = ? AND password = ?').get(username, password);
 
-    if (user) {
-        res.json({ success: true, user: { id: user.id, username: user.username } });
-    } else {
-        res.status(401).json({ success: false, message: 'Invalid credentials' });
+        if (user) {
+            res.json({ success: true, user: { id: user.id, username: user.username } });
+        } else {
+            res.status(401).json({ success: false, message: 'Invalid credentials' });
+        }
+    } catch (error) {
+        console.error('Login Error:', error);
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
 // Products API
-app.get('/api/products', (req, res) => {
-    const products = db.prepare('SELECT * FROM products').all();
-    // Parse features JSON string back into array
-    const formattedProducts = products.map(p => ({
-        ...p,
-        features: JSON.parse(p.features)
-    }));
-    res.json(formattedProducts);
+app.get('/api/products', async (req, res) => {
+    try {
+        const db = await initDb();
+        const products = db.prepare('SELECT * FROM products').all();
+        // Parse features JSON string back into array
+        const formattedProducts = products.map(p => ({
+            ...p,
+            features: JSON.parse(p.features)
+        }));
+        res.json(formattedProducts);
+    } catch (error) {
+        console.error('Products Error:', error);
+        res.status(500).json({ success: false, error: 'Failed to fetch products' });
+    }
 });
 
 // Recommendation API
-app.get('/api/recommend', (req, res) => {
+app.get('/api/recommend', async (req, res) => {
     const { userId } = req.query;
     if (!userId) return res.status(400).json({ error: 'userId is required' });
 
     try {
+        const db = await initDb();
         const weights = db.prepare('SELECT * FROM model_weights WHERE id = 1').get();
         const products = db.prepare('SELECT * FROM products').all();
         const userActions = db.prepare(`
@@ -84,22 +122,34 @@ app.get('/api/recommend', (req, res) => {
 });
 
 // Admin API - Get ML Status
-app.get('/api/admin/status', (req, res) => {
-    const weights = db.prepare('SELECT * FROM model_weights WHERE id = 1').get();
-    const logs = db.prepare('SELECT * FROM training_logs ORDER BY timestamp DESC LIMIT 10').all();
-    res.json({ weights, logs });
+app.get('/api/admin/status', async (req, res) => {
+    try {
+        const db = await initDb();
+        const weights = db.prepare('SELECT * FROM model_weights WHERE id = 1').get();
+        const logs = db.prepare('SELECT * FROM training_logs ORDER BY timestamp DESC LIMIT 10').all();
+        res.json({ weights, logs });
+    } catch (error) {
+        console.error('Admin Status Error:', error);
+        res.status(500).json({ success: false, error: 'Internal server error' });
+    }
 });
 
 // Admin API - Trigger Training
 app.post('/api/admin/train', async (req, res) => {
-    const result = await ml.trainModel();
-    res.json(result);
+    try {
+        await initDb();
+        const result = await ml.trainModel();
+        res.json(result);
+    } catch (error) {
+        console.error('Training Error:', error);
+        res.status(500).json({ success: false, error: 'Training failed' });
+    }
 });
 
 
 
 // Action Tracking API
-app.post('/api/track', (req, res) => {
+app.post('/api/track', async (req, res) => {
     const { userId, actionType, productId } = req.body;
 
     if (!userId || !actionType || !productId) {
@@ -107,6 +157,7 @@ app.post('/api/track', (req, res) => {
     }
 
     try {
+        const db = await initDb();
         const now = new Date().toLocaleString('sv', { timeZone: 'Asia/Seoul' });
         const stmt = db.prepare("INSERT INTO actions (userId, actionType, productId, timestamp) VALUES (?, ?, ?, ?)");
         stmt.run(userId, actionType, productId, now);
@@ -116,6 +167,12 @@ app.post('/api/track', (req, res) => {
         console.error('Tracking error:', error);
         res.status(500).json({ success: false, error: 'Database error' });
     }
+});
+
+// Catch-all for /api
+app.use('/api/*', (req, res) => {
+    console.log(`[404] API Not Found: ${req.method} ${req.url}`);
+    res.status(404).json({ error: 'API endpoint not found', url: req.url });
 });
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
