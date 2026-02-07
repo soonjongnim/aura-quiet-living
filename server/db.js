@@ -1,5 +1,9 @@
-const Database = require('better-sqlite3');
-const path = require('path');
+import Database from 'better-sqlite3';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const db = new Database(path.join(__dirname, 'shop.db'));
 
@@ -142,4 +146,4 @@ const insertUser = db.prepare('INSERT OR IGNORE INTO users (username, password) 
 insertUser.run('test', '1234');
 
 
-module.exports = db;
+export default db;

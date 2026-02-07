@@ -40,7 +40,7 @@ function App() {
 
   useEffect(() => {
     const fetchProducts = async () => {
-      const API_BASE_URL = `http://${window.location.hostname}:3001`;
+      const API_BASE_URL = '';
       try {
         const res = await fetch(`${API_BASE_URL}/api/products`);
         const data = await res.json();
@@ -60,7 +60,9 @@ function App() {
 
   const trackAction = async (actionType: 'view' | 'click' | 'buy', productId?: string) => {
     if (!user) return;
-    const API_BASE_URL = `http://${window.location.hostname}:3001`;
+    const API_BASE_URL = window.location.hostname === 'localhost'
+      ? `http://${window.location.hostname}:3001`
+      : '';
     try {
       await fetch(`${API_BASE_URL}/api/track`, {
         method: 'POST',
@@ -73,7 +75,9 @@ function App() {
   };
 
   const handleLogin = async (username: string, pw: string) => {
-    const API_BASE_URL = `http://${window.location.hostname}:3001`;
+    const API_BASE_URL = window.location.hostname === 'localhost'
+      ? `http://${window.location.hostname}:3001`
+      : '';
     try {
       const res = await fetch(`${API_BASE_URL}/api/login`, {
         method: 'POST',
@@ -99,7 +103,9 @@ function App() {
       setView({ type: 'login' });
       return;
     }
-    const API_BASE_URL = `http://${window.location.hostname}:3001`;
+    const API_BASE_URL = window.location.hostname === 'localhost'
+      ? `http://${window.location.hostname}:3001`
+      : '';
     setIsAiLoading(true);
     try {
       const res = await fetch(`${API_BASE_URL}/api/recommend?userId=${user.username}`);

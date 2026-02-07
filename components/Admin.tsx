@@ -24,7 +24,7 @@ const Admin: React.FC = () => {
     const [autoBatch, setAutoBatch] = useState(true);
 
     const fetchStatus = async () => {
-        const API_BASE_URL = `http://${window.location.hostname}:3001`;
+        const API_BASE_URL = '';
         setError(null);
         try {
             const res = await fetch(`${API_BASE_URL}/api/admin/status`);
@@ -43,7 +43,7 @@ const Admin: React.FC = () => {
     }, []);
 
     const handleTrain = async () => {
-        const API_BASE_URL = `http://${window.location.hostname}:3001`;
+        const API_BASE_URL = '';
         setLoading(true);
         try {
             await fetch(`${API_BASE_URL}/api/admin/train`, { method: 'POST' });

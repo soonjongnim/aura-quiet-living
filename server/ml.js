@@ -1,4 +1,4 @@
-const db = require('./db');
+import db from './db.js';
 
 /**
  * Sigmoid function for Logistic Regression
@@ -117,4 +117,4 @@ function predict(userActions, weights) {
     return sigmoid(z);
 }
 
-module.exports = { trainModel, predict };
+export { trainModel, predict };

@@ -1,8 +1,8 @@
-const express = require('express');
-const cors = require('cors');
-const db = require('./db');
-const ml = require('./ml');
-
+import express from 'express';
+import cors from 'cors';
+import db from './db.js';
+import * as ml from './ml.js';
+import { fileURLToPath } from 'url';
 
 const app = express();
 const PORT = 3001;
@@ -113,6 +113,10 @@ app.post('/api/track', (req, res) => {
     }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
-});
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+    app.listen(PORT, '0.0.0.0', () => {
+        console.log(`Server running on http://0.0.0.0:${PORT}`);
+    });
+}
+
+export default app;
