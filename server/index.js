@@ -167,8 +167,11 @@ app.post('/api/track', async (req, res) => {
 
 console.log('[Init] All routes added.');
 
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://localhost:${PORT} (Notion Mode)`);
-});
+// Only start the server if we're not running as a Vercel function
+if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+    app.listen(PORT, '0.0.0.0', () => {
+        console.log(`Server running on http://localhost:${PORT} (Notion Mode)`);
+    });
+}
 
 export default app;
