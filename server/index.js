@@ -23,6 +23,10 @@ app.use((req, res, next) => {
 
 console.log('[Init] Logger added.');
 
+app.get('/', (req, res) => {
+    res.send('Aura Backend is running on Vercel (Express + Notion)');
+});
+
 // Health Check API (Multiple paths for Vercel/Express compatibility)
 const healthHandler = (req, res) => {
     res.json({
