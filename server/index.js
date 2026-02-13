@@ -23,32 +23,36 @@ app.use((req, res, next) => {
 
 console.log('[Init] Logger added.');
 
-// Health Check API
-app.get('/api/health', (req, res) => {
+// Health Check API (Multiple paths for Vercel/Express compatibility)
+const healthHandler = (req, res) => {
     res.json({
         status: 'ok',
         database: 'notion',
         env: process.env.NODE_ENV,
         node: process.version,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        url: req.url
     });
-});
+};
+app.get('/api/health', healthHandler);
+app.get('/health', healthHandler);
 
 // Debug Env (Hidden check for troubleshooting)
-app.get('/api/debug-env', (req, res) => {
+const debugHandler = (req, res) => {
+    const notionKeys = Object.keys(process.env).filter(k => k.toUpperCase().includes('NOTION'));
     res.json({
-        has_key: !!process.env.NOTION_API_KEY,
-        has_products_id: !!process.env.NOTION_PRODUCTS_DS_ID,
-        has_users_id: !!process.env.NOTION_USERS_DS_ID,
-        has_actions_id: !!process.env.NOTION_ACTIONS_DS_ID,
-        has_weights_id: !!process.env.NOTION_WEIGHTS_DS_ID,
-        has_logs_id: !!process.env.NOTION_LOGS_DS_ID,
-        has_db_id: !!process.env.NOTION_DATABASE_ID,
-        env_keys_count: Object.keys(process.env).length
+        has_key: !!(process.env.NOTION_API_KEY || process.env.NOTION_TOKEN),
+        notion_keys_found: notionKeys,
+        node_env: process.env.NODE_ENV,
+        vercel_env: process.env.VERCEL,
+        env_keys_count: Object.keys(process.env).length,
+        url: req.url
     });
-});
+};
+app.get('/api/debug-env', debugHandler);
+app.get('/debug-env', debugHandler);
 
-console.log('[Init] Health endpoint added.');
+console.log('[Init] Health and Debug endpoints added.');
 
 // Login API
 app.post('/api/login', async (req, res) => {
