@@ -34,6 +34,20 @@ app.get('/api/health', (req, res) => {
     });
 });
 
+// Debug Env (Hidden check for troubleshooting)
+app.get('/api/debug-env', (req, res) => {
+    res.json({
+        has_key: !!process.env.NOTION_API_KEY,
+        has_products_id: !!process.env.NOTION_PRODUCTS_DS_ID,
+        has_users_id: !!process.env.NOTION_USERS_DS_ID,
+        has_actions_id: !!process.env.NOTION_ACTIONS_DS_ID,
+        has_weights_id: !!process.env.NOTION_WEIGHTS_DS_ID,
+        has_logs_id: !!process.env.NOTION_LOGS_DS_ID,
+        has_db_id: !!process.env.NOTION_DATABASE_ID,
+        env_keys_count: Object.keys(process.env).length
+    });
+});
+
 console.log('[Init] Health endpoint added.');
 
 // Login API

@@ -16,7 +16,9 @@ const NOTION_VERSION = "2025-09-03";
 export async function queryDataSource(dataSourceId, filter = {}) {
     const apiKey = process.env.NOTION_API_KEY;
     if (!dataSourceId || !apiKey) {
-        throw new Error(`Configuration Error: Data Source ID (${dataSourceId}) or NOTION_API_KEY is missing in environment.`);
+        const errorMsg = `Config Error: dsid=${dataSourceId ? 'OK' : 'MISSING'}, key=${apiKey ? 'OK' : 'MISSING'}`;
+        console.error(errorMsg);
+        throw new Error(errorMsg);
     }
 
     const response = await fetch(`https://api.notion.com/v1/data_sources/${dataSourceId}/query`, {
