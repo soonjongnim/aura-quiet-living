@@ -12,13 +12,10 @@ if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
 
 const NOTION_VERSION = "2025-09-03";
 
-/**
- * Generic query function for Notion Data Sources.
- */
 export async function queryDataSource(dataSourceId, filter = {}) {
-    const apiKey = process.env.NOTION_API_KEY || process.env.NOTION_TOKEN;
+    const apiKey = process.env.NOTION_API_KEY || process.env.NOTION_TOKEN || process.env.NOTION_SECRET;
     if (!dataSourceId || !apiKey) {
-        const errorMsg = `Config Error: dsid=${dataSourceId ? 'OK' : 'MISSING'}, key=${apiKey ? 'OK' : 'MISSING'}. dsid_val=${dataSourceId}`;
+        const errorMsg = `Config Error: dsid=${dataSourceId ? 'OK' : 'MISSING'}, key=${apiKey ? 'OK' : 'MISSING'}. (Checked: NOTION_API_KEY, NOTION_TOKEN, NOTION_SECRET)`;
         console.error(errorMsg);
         throw new Error(errorMsg);
     }
