@@ -23,8 +23,13 @@ app.use((req, res, next) => {
 
 console.log('[Init] Logger added.');
 
+// Log NOTION related keys on startup to verify presence (Vercel console)
+const notionKeys = Object.keys(process.env).filter(k => k.includes('NOTION'));
+console.log('[Debug] Found Notion-related keys in process.env:', notionKeys);
+
 app.get('/', (req, res) => {
-    res.send('Aura Backend is running on Vercel (Express + Notion)');
+    const keysFound = Object.keys(process.env).filter(k => k.includes('NOTION'));
+    res.send(`Aura Backend is running. Notion keys found: ${keysFound.join(', ') || 'NONE'}`);
 });
 
 // Health Check API (Multiple paths for Vercel/Express compatibility)
