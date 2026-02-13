@@ -16,12 +16,13 @@ const NOTION_VERSION = "2025-09-03";
  * Generic query function for Notion Data Sources.
  */
 export async function queryDataSource(dataSourceId, filter = {}) {
-    const apiKey = process.env.NOTION_API_KEY;
+    const apiKey = process.env.NOTION_API_KEY || process.env.NOTION_TOKEN;
     if (!dataSourceId || !apiKey) {
-        const errorMsg = `Config Error: dsid=${dataSourceId ? 'OK' : 'MISSING'}, key=${apiKey ? 'OK' : 'MISSING'}`;
+        const errorMsg = `Config Error: dsid=${dataSourceId ? 'OK' : 'MISSING'}, key=${apiKey ? 'OK' : 'MISSING'}. dsid_val=${dataSourceId}`;
         console.error(errorMsg);
         throw new Error(errorMsg);
     }
+    console.log(`[Notion] Querying DS: ${dataSourceId} with key starting with ${apiKey.substring(0, 4)}...`);
 
     const response = await fetch(`https://api.notion.com/v1/data_sources/${dataSourceId}/query`, {
         method: "POST",
