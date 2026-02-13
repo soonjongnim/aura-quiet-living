@@ -1,14 +1,19 @@
 import express from 'express';
 import cors from 'cors';
 import { fileURLToPath } from 'url';
+import * as notion from './notion.js';
+import * as ml from './ml.js';
 
-console.log('[Init] Server index.js loading...');
+console.log('[Init] Server index.js starting load...');
 
 const app = express();
 const PORT = 3001;
 
+console.log('[Init] Setting up middleware...');
 app.use(cors());
+console.log('[Init] CORS added.');
 app.use(express.json());
+console.log('[Init] JSON parser added.');
 
 // Request Logger
 app.use((req, res, next) => {
@@ -16,69 +21,61 @@ app.use((req, res, next) => {
     next();
 });
 
-// Health Check API - No DB dependency
+console.log('[Init] Logger added.');
+
+// Health Check API
 app.get('/api/health', (req, res) => {
     res.json({
         status: 'ok',
+        database: 'notion',
         env: process.env.NODE_ENV,
         node: process.version,
         timestamp: new Date().toISOString()
     });
 });
 
-// Database and ML imports (Static for now, but used carefully)
-let db;
-let ml;
-
-async function initDb() {
-    if (db) return db;
-    try {
-        console.log('[Init] Importing database...');
-        const dbModule = await import('./db.js');
-        db = dbModule.default;
-        console.log('[Init] Importing ML module...');
-        ml = await import('./ml.js');
-        console.log('[Init] Database and ML modules loaded.');
-        return db;
-    } catch (err) {
-        console.error('[Error] Failed to initialize database:', err);
-        throw err;
-    }
-}
-
+console.log('[Init] Health endpoint added.');
 
 // Login API
 app.post('/api/login', async (req, res) => {
     try {
-        const db = await initDb();
         const { username, password } = req.body;
-        const user = db.prepare('SELECT * FROM users WHERE username = ? AND password = ?').get(username, password);
+        const users = await notion.getUsers();
+        const user = users.find(u => u.username === username && u.password === password);
 
         if (user) {
-            res.json({ success: true, user: { id: user.id, username: user.username } });
+            res.json({ success: true, user: { id: user.id || user.username, username: user.username } });
         } else {
             res.status(401).json({ success: false, message: 'Invalid credentials' });
         }
     } catch (error) {
         console.error('Login Error:', error);
-        res.status(500).json({ success: false, error: 'Internal server error' });
+        res.status(500).json({ success: false, error: 'Internal server error (Notion)' });
     }
 });
 
 // Products API
 app.get('/api/products', async (req, res) => {
+    console.log('[API] GET /api/products called');
     try {
-        const db = await initDb();
-        const products = db.prepare('SELECT * FROM products').all();
-        // Parse features JSON string back into array
-        const formattedProducts = products.map(p => ({
-            ...p,
-            features: JSON.parse(p.features)
-        }));
+        const products = await notion.getProducts();
+        console.log(`[API] Fetched ${products.length} products from Notion`);
+        const formattedProducts = products.map((p, idx) => {
+            try {
+                return {
+                    ...p,
+                    features: typeof p.features === 'string' ? JSON.parse(p.features) : p.features
+                };
+            } catch (e) {
+                console.warn(`[API] JSON parse failed for product at index ${idx}:`, p.name);
+                return { ...p, features: [] };
+            }
+        });
+        console.log('[API] Successfully formatted products');
         res.json(formattedProducts);
     } catch (error) {
-        console.error('Products Error:', error);
-        res.status(500).json({ success: false, error: 'Failed to fetch products' });
+        console.error('Products Error Detailed:', error);
+        res.status(500).json({ success: false, error: 'Failed to fetch products from Notion', details: error.message });
     }
 });
 
@@ -88,56 +85,54 @@ app.get('/api/recommend', async (req, res) => {
     if (!userId) return res.status(400).json({ error: 'userId is required' });
 
     try {
-        const db = await initDb();
-        const weights = db.prepare('SELECT * FROM model_weights WHERE id = 1').get();
-        const products = db.prepare('SELECT * FROM products').all();
-        const userActions = db.prepare(`
-            SELECT 
-                productId,
-                SUM(CASE WHEN actionType = 'view' THEN 1 ELSE 0 END) as view_count,
-                SUM(CASE WHEN actionType = 'click' THEN 1 ELSE 0 END) as click_count,
-                SUM(CASE WHEN actionType = 'buy' THEN 1 ELSE 0 END) as buy_count
-            FROM actions
-            WHERE userId = ?
-            GROUP BY productId
-        `).all(userId);
+        const weightsList = await notion.getModelWeights();
+        const weights = weightsList[0] || { bias: 0, w_view: 0.1, w_click: 0.5, w_buy: 1.0 };
+
+        const products = await notion.getProducts();
+        const allActions = await notion.getActions();
 
         const recommendations = products.map(p => {
-            const actions = userActions.find(a => a.productId === p.id) || { view_count: 0, click_count: 0, buy_count: 0 };
-            const probability = ml.predict(actions, weights);
+            const userActions = allActions.filter(a => a.userId.toString() === userId.toString() && a.productId.toString() === p.id.toString());
+            const counts = {
+                view_count: userActions.filter(a => a.actionType === 'view').length,
+                click_count: userActions.filter(a => a.actionType === 'click').length,
+                buy_count: userActions.filter(a => a.actionType === 'buy').length
+            };
+
+            const probability = ml.predict(counts, weights);
             return {
                 id: p.id,
                 name: p.name,
                 probability: Math.round(probability * 100),
-                actions // Include debug info locally
+                actions: counts
             };
         }).sort((a, b) => b.probability - a.probability);
 
-        console.log(`[Recommend] User: ${userId}, Top: ${recommendations[0].name} (${recommendations[0].probability}%)`);
         res.json({ success: true, userId, recommendations });
     } catch (error) {
         console.error('Recommend Error:', error);
-        res.status(500).json({ success: false, error: 'Failed to get recommendations' });
+        res.status(500).json({ success: false, error: 'Failed to get recommendations from Notion' });
     }
 });
 
-// Admin API - Get ML Status
+// Admin API - Status
 app.get('/api/admin/status', async (req, res) => {
     try {
-        const db = await initDb();
-        const weights = db.prepare('SELECT * FROM model_weights WHERE id = 1').get();
-        const logs = db.prepare('SELECT * FROM training_logs ORDER BY timestamp DESC LIMIT 10').all();
-        res.json({ weights, logs });
+        const weightsList = await notion.getModelWeights();
+        const logs = await notion.getTrainingLogs();
+        res.json({
+            weights: weightsList[0],
+            logs: logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 5)
+        });
     } catch (error) {
         console.error('Admin Status Error:', error);
         res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
-// Admin API - Trigger Training
+// Admin API - Train
 app.post('/api/admin/train', async (req, res) => {
     try {
-        await initDb();
         const result = await ml.trainModel();
         res.json(result);
     } catch (error) {
@@ -146,39 +141,34 @@ app.post('/api/admin/train', async (req, res) => {
     }
 });
 
-
-
-// Action Tracking API
-app.post('/api/track', async (req, res) => {
-    const { userId, actionType, productId } = req.body;
-
-    if (!userId || !actionType || !productId) {
-        return res.status(400).json({ success: false, error: 'Missing required fields' });
-    }
-
+// Order API
+app.post('/api/order', async (req, res) => {
     try {
-        const db = await initDb();
-        const now = new Date().toLocaleString('sv', { timeZone: 'Asia/Seoul' });
-        const stmt = db.prepare("INSERT INTO actions (userId, actionType, productId, timestamp) VALUES (?, ?, ?, ?)");
-        stmt.run(userId, actionType, productId, now);
-        console.log(`[Track] User: ${userId}, Action: ${actionType}, Product: ${productId} at ${now}`);
+        const { name, phone, product, quantity } = req.body;
+        await notion.addOrder(name, phone, product, quantity);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Order Error:', error);
+        res.status(500).json({ success: false, error: 'Failed to create order' });
+    }
+});
+
+// Track API
+app.post('/api/track', async (req, res) => {
+    try {
+        const { userId, actionType, productId } = req.body;
+        await notion.trackAction(userId, actionType, productId);
         res.json({ success: true });
     } catch (error) {
         console.error('Tracking error:', error);
-        res.status(500).json({ success: false, error: 'Database error' });
+        res.status(500).json({ success: false, error: 'Notion tracking error' });
     }
 });
 
-// Catch-all for /api
-app.use('/api/*', (req, res) => {
-    console.log(`[404] API Not Found: ${req.method} ${req.url}`);
-    res.status(404).json({ error: 'API endpoint not found', url: req.url });
-});
+console.log('[Init] All routes added.');
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    app.listen(PORT, '0.0.0.0', () => {
-        console.log(`Server running on http://0.0.0.0:${PORT}`);
-    });
-}
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on http://localhost:${PORT} (Notion Mode)`);
+});
 
 export default app;

@@ -16,10 +16,53 @@ interface CheckoutProps {
 
 
 const Checkout: React.FC<CheckoutProps> = ({ items, onBack, onComplete }) => {
+  const [firstName, setFirstName] = React.useState('');
+  const [lastName, setLastName] = React.useState('');
+  const [phone, setPhone] = React.useState('');
+  const [loading, setLoading] = React.useState(false);
 
   const subtotal = items.reduce((sum, item) => sum + item.price, 0);
   const shipping = 0; // Free shipping
   const total = subtotal + shipping;
+
+  const handlePayment = async () => {
+    if (!firstName || !lastName || !phone) {
+      alert('성함과 전화번호를 입력해주세요.');
+      return;
+    }
+
+    setLoading(true);
+    const API_BASE_URL = ''; // Relative path for Vercel
+
+    try {
+      // Group items by ID to handle quantity (implied multiple same items?)
+      // For now, simplistically iterate.
+      // Or just send one request per item in the cart.
+
+      const promises = items.map(item =>
+        fetch(`${API_BASE_URL}/api/order`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: `${lastName}${firstName}`, // Korean naming convention or just concat
+            phone,
+            product: item.name,
+            quantity: 1 // Assuming 1 for now as cart has individual items
+          })
+        })
+      );
+
+      await Promise.all(promises);
+
+      alert('주문이 완료되었습니다!');
+      onComplete();
+    } catch (error) {
+      console.error('Order failed', error);
+      alert('주문 처리에 실패했습니다. 다시 시도해주세요.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen pt-24 pb-24 px-6 bg-[#F5F2EB] animate-fade-in-up">
@@ -50,6 +93,13 @@ const Checkout: React.FC<CheckoutProps> = ({ items, onBack, onComplete }) => {
 
                 <div className="space-y-4">
                   <input type="email" placeholder="이메일 주소" className="w-full bg-transparent border-b border-[#D6D1C7] py-3 text-[#2C2A26] placeholder-[#A8A29E] outline-none focus:border-[#2C2A26] transition-colors" />
+                  <input
+                    type="tel"
+                    placeholder="전화번호 (010-0000-0000)"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    className="w-full bg-transparent border-b border-[#D6D1C7] py-3 text-[#2C2A26] placeholder-[#A8A29E] outline-none focus:border-[#2C2A26] transition-colors"
+                  />
                   <div className="flex items-center gap-2">
                     <input type="checkbox" id="newsletter" className="accent-[#2C2A26]" />
                     <label htmlFor="newsletter" className="text-sm text-[#5D5A53]">뉴스레터 및 혜택 알림 받기</label>
@@ -63,8 +113,20 @@ const Checkout: React.FC<CheckoutProps> = ({ items, onBack, onComplete }) => {
 
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
-                    <input type="text" placeholder="성" className="w-full bg-transparent border-b border-[#D6D1C7] py-3 text-[#2C2A26] placeholder-[#A8A29E] outline-none focus:border-[#2C2A26] transition-colors" />
-                    <input type="text" placeholder="이름" className="w-full bg-transparent border-b border-[#D6D1C7] py-3 text-[#2C2A26] placeholder-[#A8A29E] outline-none focus:border-[#2C2A26] transition-colors" />
+                    <input
+                      type="text"
+                      placeholder="성"
+                      value={lastName}
+                      onChange={(e) => setLastName(e.target.value)}
+                      className="w-full bg-transparent border-b border-[#D6D1C7] py-3 text-[#2C2A26] placeholder-[#A8A29E] outline-none focus:border-[#2C2A26] transition-colors"
+                    />
+                    <input
+                      type="text"
+                      placeholder="이름"
+                      value={firstName}
+                      onChange={(e) => setFirstName(e.target.value)}
+                      className="w-full bg-transparent border-b border-[#D6D1C7] py-3 text-[#2C2A26] placeholder-[#A8A29E] outline-none focus:border-[#2C2A26] transition-colors"
+                    />
                   </div>
                   <input type="text" placeholder="주소" className="w-full bg-transparent border-b border-[#D6D1C7] py-3 text-[#2C2A26] placeholder-[#A8A29E] outline-none focus:border-[#2C2A26] transition-colors" />
                   <input type="text" placeholder="상세주소 (선택)" className="w-full bg-transparent border-b border-[#D6D1C7] py-3 text-[#2C2A26] placeholder-[#A8A29E] outline-none focus:border-[#2C2A26] transition-colors" />
@@ -91,10 +153,11 @@ const Checkout: React.FC<CheckoutProps> = ({ items, onBack, onComplete }) => {
 
               <div>
                 <button
-                  onClick={onComplete}
-                  className="w-full py-5 bg-[#2C2A26] text-[#F5F2EB] uppercase tracking-widest text-sm font-medium hover:bg-[#433E38] transition-colors"
+                  onClick={handlePayment}
+                  disabled={loading}
+                  className="w-full py-5 bg-[#2C2A26] text-[#F5F2EB] uppercase tracking-widest text-sm font-medium hover:bg-[#433E38] transition-colors disabled:opacity-50"
                 >
-                  지금 결제하기 — ${total}
+                  {loading ? '처리 중...' : `지금 결제하기 — $${total}`}
                 </button>
               </div>
 

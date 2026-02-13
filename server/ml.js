@@ -1,4 +1,4 @@
-import db from './db.js';
+import * as notion from './notion.js';
 
 /**
  * Sigmoid function for Logistic Regression
@@ -8,94 +8,76 @@ function sigmoid(z) {
 }
 
 /**
- * Simple Logistic Regression Training using Gradient Descent
+ * Simple Logistic Regression Training using Notion Data and JS Aggregation
  */
 async function trainModel() {
-    console.log('Starting ML Training...');
+    console.log('Starting ML Training with Notion Data...');
 
     try {
-        // 1. Fetch data for training
-        // We aggregate actions per user and product
-        // For simplicity, we'll use all actions and treat 'buy' as the target label (1), 
-        // and interactions without buy as 0 (though in a real shop, almost everything is 0).
-        // Let's refine the training set: any user-product pair that has at least one action.
-        const trainingData = db.prepare(`
-      SELECT 
-        userId, 
-        productId,
-        SUM(CASE WHEN actionType = 'view' THEN 1 ELSE 0 END) as view_count,
-        SUM(CASE WHEN actionType = 'click' THEN 1 ELSE 0 END) as click_count,
-        SUM(CASE WHEN actionType = 'buy' THEN 1 ELSE 0 END) as buy_count,
-        CASE 
-          WHEN SUM(CASE WHEN actionType = 'buy' THEN 1 ELSE 0 END) > 0 THEN 1 
-          WHEN SUM(CASE WHEN actionType = 'click' THEN 1 ELSE 0 END) >= 3 THEN 1
-          WHEN SUM(CASE WHEN actionType = 'view' THEN 1 ELSE 0 END) >= 5 THEN 1
-          ELSE 0 
-        END as label
-      FROM actions
-      GROUP BY userId, productId
-    `).all();
+        // 1. Fetch data from Notion
+        const allActions = await notion.getActions();
+
+        // 2. Aggregate actions per user and product (Manual aggregation for Notion)
+        const aggregationMap = {};
+        allActions.forEach(action => {
+            const key = `${action.userId}_${action.productId}`;
+            if (!aggregationMap[key]) {
+                aggregationMap[key] = { userId: action.userId, productId: action.productId, view_count: 0, click_count: 0, buy_count: 0 };
+            }
+            if (action.actionType === 'view') aggregationMap[key].view_count++;
+            if (action.actionType === 'click') aggregationMap[key].click_count++;
+            if (action.actionType === 'buy') aggregationMap[key].buy_count++;
+        });
+
+        const trainingData = Object.values(aggregationMap).map(row => ({
+            ...row,
+            label: (row.buy_count > 0 || row.click_count >= 3 || row.view_count >= 5) ? 1 : 0
+        }));
 
         if (trainingData.length === 0) {
-            db.prepare('INSERT INTO training_logs (status, message) VALUES (?, ?)').run('SKIPPED', 'No training data available.');
+            await notion.addTrainingLog('SKIPPED', 'No training data available in Notion.');
             return { success: false, message: 'No data' };
         }
 
-        // 2. Initialize weights from DB
-        let model = db.prepare('SELECT * FROM model_weights WHERE id = 1').get();
+        // 3. Initialize weights from Notion
+        const weightsList = await notion.getModelWeights();
+        let model = weightsList[0] || { bias: 0, w_view: 0.1, w_click: 0.5, w_buy: 1.0 };
         let { bias, w_view, w_click, w_buy } = model;
 
         const learningRate = 0.01;
         const epochs = 100;
 
-        // 3. SGD Training
+        // 4. SGD Training (Same logic as before)
         for (let i = 0; i < epochs; i++) {
             trainingData.forEach(row => {
-                const view_count = Number(row.view_count) || 0;
-                const click_count = Number(row.click_count) || 0;
-                const buy_count = Number(row.buy_count) || 0;
-                const label = Number(row.label) || 0;
-
-                // Prediction
-                const z = bias + w_view * view_count + w_click * click_count + w_buy * buy_count;
+                const z = bias + w_view * row.view_count + w_click * row.click_count + w_buy * row.buy_count;
                 const prediction = sigmoid(z);
+                const error = row.label - prediction;
 
-                // Gradient
-                const error = label - prediction;
-
-                // Update
                 bias += learningRate * error;
-                w_view = Math.max(0.1, w_view + learningRate * error * view_count);
-                w_click = Math.max(0.5, w_click + learningRate * error * click_count); // High floor for clicks
-                w_buy = Math.max(1.0, w_buy + learningRate * error * buy_count);
+                w_view = Math.max(0.1, w_view + learningRate * error * row.view_count);
+                w_click = Math.max(0.5, w_click + learningRate * error * row.click_count);
+                w_buy = Math.max(1.0, w_buy + learningRate * error * row.buy_count);
             });
         }
 
-        // 4. Calculate final accuracy
+        // 5. Calculate Accuracy
         let correctPredictions = 0;
         trainingData.forEach(row => {
             const z = bias + w_view * row.view_count + w_click * row.click_count + w_buy * row.buy_count;
             const prediction = sigmoid(z) >= 0.5 ? 1 : 0;
-            if (prediction === (Number(row.label) || 0)) {
-                correctPredictions++;
-            }
+            if (prediction === row.label) correctPredictions++;
         });
         const accuracy = (correctPredictions / trainingData.length) * 100;
 
-        // 5. Save result
-        const now = new Date().toLocaleString('sv', { timeZone: 'Asia/Seoul' });
-        db.prepare(`
-      UPDATE model_weights 
-      SET bias = ?, w_view = ?, w_click = ?, w_buy = ?, accuracy = ?, updated_at = ?
-      WHERE id = 1
-    `).run(bias, w_view, w_click, w_buy, accuracy, now);
-
-        db.prepare("INSERT INTO training_logs (status, message, timestamp) VALUES (?, ?, ?)").run('SUCCESS', `Learned. Accuracy: ${accuracy.toFixed(1)}%, weights: v=${w_view.toFixed(2)}, c=${w_click.toFixed(2)}`, now);
+        // 6. Save result to Notion
+        await notion.updateWeights(bias, w_view, w_click, w_buy, accuracy);
+        await notion.addTrainingLog('SUCCESS', `Learned (Notion). Accuracy: ${accuracy.toFixed(1)}%, weights: v=${w_view.toFixed(2)}, c=${w_click.toFixed(2)}`);
 
         return { success: true, accuracy, weights: { bias, w_view, w_click, w_buy } };
     } catch (error) {
-        console.error('Training Error:', error);
-        db.prepare("INSERT INTO training_logs (status, message, timestamp) VALUES (?, ?, ?)").run('ERROR', error.message, new Date().toLocaleString('sv', { timeZone: 'Asia/Seoul' }));
+        console.error('Training Error (Notion):', error);
+        await notion.addTrainingLog('ERROR', `Notion Training Failed: ${error.message}`);
         return { success: false, error: error.message };
     }
 }

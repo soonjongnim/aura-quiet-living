@@ -4,11 +4,16 @@
         {
             "source": "/api/(.*)",
             "destination": "/api/index.js"
+        },
+        {
+            "source": "/(.*)",
+            "destination": "/"
         }
     ],
     "functions": {
         "api/index.js": {
-            "includeFiles": "server/shop.db"
+            "memory": 1024,
+            "maxDuration": 10
         }
     }
 }
